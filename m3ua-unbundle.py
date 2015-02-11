@@ -53,6 +53,8 @@ SCTP_CHUNK_TYPES = {
     'SHUTDOWN': 14,
 }
 
+args = None
+
 def remove_extra(chunk):
     ''' remove extra symbols '''
     
@@ -161,7 +163,11 @@ def extract_sctp(text2pcap_process, current_time, data):
                     continue
                 payload = sctp_chunk['data'][16:sctp_chunk['length']]
                 m3ua_hdr, payload = m3ua_header(payload)
-                mtp3_hdr = m3ua_to_mtp3(m3ua_hdr)
+                mtp3_hdr = None
+                if args.ansi:
+                    mtp3_hdr = m3ua_to_ansi_mtp3(m3ua_hdr)
+                else:
+                    mtp3_hdr = m3ua_to_mtp3(m3ua_hdr)
                 if not mtp3_hdr:
                     continue
                 if 'protocol.padding' in m3ua_hdr:
@@ -258,6 +264,23 @@ def m3ua_to_mtp3(m3ua_header):
         return None
     return mtp3_header
 
+def m3ua_to_ansi_mtp3(m3ua_header):
+    mtp3_header = list()
+    # Service information octet
+    try:
+        sio = '%02x' % ((m3ua_header['protocol.ni'] << 6) + m3ua_header['protocol.si'])
+        mtp3_header.append(sio)
+        routing_label = (m3ua_header['protocol.sls'] << 48) + \
+                        (m3ua_header['protocol.opc'] << 24) + \
+                        m3ua_header['protocol.dpc']
+        routing_label = '%014x' % routing_label
+        routing_label = [routing_label[i:i+2] for i in range(0, len(routing_label), 2)]
+        routing_label.reverse()
+        mtp3_header.extend(routing_label)
+    except KeyError:
+        return None
+    return mtp3_header
+
 def save_data(process, current_time, data):
     ''' save data block to process '''
 
@@ -316,6 +339,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='m3ua unbundle')
     parser.add_argument('--filter', action='store', help='wireshark filter')
     parser.add_argument('-s', '--sll', action='store_true', help='Linux cooked-mode capture (SLL)')
+    parser.add_argument('-a', '--ansi', action='store_true', help='ANSI MTP3')
     parser.add_argument('source', action='store', help='source pcap file')
     parser.add_argument('result', action='store', help='result pcap file')
     args = parser.parse_args()
